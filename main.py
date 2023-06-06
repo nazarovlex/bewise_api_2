@@ -1,7 +1,9 @@
 import urllib
 import uuid
 import io
+from fastapi import HTTPException, status
 import uvicorn
+from pydub import AudioSegment
 from fastapi import FastAPI, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from models import UsersTable, AudioTable, AddUserRequest
@@ -50,8 +52,30 @@ async def add_user(params: AddUserRequest) -> dict:
 
 @app.post("/add_audio")
 async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), token: str = Form(...)) -> dict:
-    binary_audio = await file.read()
+    try:
+        binary_audio = await file.read()
+        if not binary_audio:
+            return {"Error": "Failed to upload file. Please try again."}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
     audio_name = file.filename.split(".")[0]
+    audio_format = file.filename.split(".")[-1]
+    if audio_format != "wav":
+        return {"Error": "Uploaded file must have wav format!!"}
+
+    # Создаем временный файл в памяти
+    temp_file = io.BytesIO(binary_audio)
+
+    # Открываем аудиозапись из временного файла
+    audio = AudioSegment.from_file(temp_file, format='wav')
+
+    # Конвертируем в формат MP3
+    output = io.BytesIO()
+    audio.export(output, format='mp3', codec='mp3', parameters=['-q:a', '0', '-map', '0'])
+
+    # Сбрасываем указатель файла в начало
+    output.seek(0)
 
     db = SessionLocal()
     user = db.query(UsersTable).filter(UsersTable.user_uuid == user_uuid, UsersTable.token == token).first()
@@ -59,14 +83,13 @@ async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), to
         return {"Error": "User with this token and UUID doesn't exist!!!"}
 
     audio_uuid = uuid.uuid4()
-
-    url = f"http://{app_ip}:{app_port}/record?id={audio_uuid}&user={user_uuid}"
+    audio_url = f"http://{app_ip}:{app_port}/record?id={audio_uuid}&user={user_uuid}"
 
     audio_data = {
         "audio_uuid": audio_uuid,
-        "audio": binary_audio,
+        "audio": output.getvalue(),
         "user_uuid": user_uuid,
-        "audio_url": url,
+        "audio_url": audio_url,
         "audio_name": audio_name
     }
 
@@ -74,7 +97,7 @@ async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), to
     db.execute(query)
     db.commit()
     db.close()
-    return {"url": url}
+    return {"url": audio_url}
 
 
 @app.get("/record")
@@ -86,11 +109,11 @@ async def record(id: str = Query(description="id"), user: str = Query(descriptio
     binary_audio = audio_info.audio
 
     async def audio_generator():
-        with io.BytesIO(binary_audio) as buffer:
+        buffer = io.BytesIO(binary_audio)
+        chunk = buffer.read(4096)
+        while chunk:
+            yield chunk
             chunk = buffer.read(4096)
-            while chunk:
-                yield chunk
-                chunk = buffer.read(4096)
 
     file_name = urllib.parse.quote(audio_info.audio_name, safe="")
     headers = {
