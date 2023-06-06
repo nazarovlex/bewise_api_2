@@ -101,9 +101,9 @@ async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), to
 
 
 @app.get("/record")
-async def record(id: str = Query(description="id"), user: str = Query(description="user")) -> StreamingResponse or dict:
+async def record(audio_uuid: str = Query(description="id"), user_uuid: str = Query(description="user")) -> StreamingResponse or dict:
     db = SessionLocal()
-    audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == id, AudioTable.user_uuid == user).one()
+    audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == audio_uuid, AudioTable.user_uuid == user_uuid).one()
     if not audio_info:
         return {"Error": "Audio with this id and user doesn't exist!!!"}
     binary_audio = audio_info.audio
