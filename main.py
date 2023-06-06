@@ -9,22 +9,26 @@ from fastapi.responses import StreamingResponse
 from models import UsersTable, AudioTable, AddUserRequest
 from database import database, engine, Base, SessionLocal
 from sqlalchemy.dialects.postgresql import insert
-from config import app_ip, app_port
+import socket
+from uvicorn import Config
 
-# FastAPI приложение
+# FastAPI init
 app = FastAPI()
 
 
+# create all tables in DB
 async def create_tables():
     Base.metadata.create_all(bind=engine)
 
 
+# connect to DB when app is start running
 @app.on_event("startup")
 async def startup():
     await database.connect()
     await create_tables()
 
 
+# disconnect to DB when app is stopping
 @app.on_event("shutdown")
 async def shutdown():
     await database.disconnect()
@@ -33,15 +37,19 @@ async def shutdown():
 @app.post("/add_user")
 async def add_user(params: AddUserRequest) -> dict:
     username = params.username
-    db = SessionLocal()
 
+    # generate token and user_uuid
     token = uuid.uuid4()
     user_uuid = uuid.uuid4()
+
     user_data = {
         "user_uuid": user_uuid,
         "token": token,
         "username": username,
     }
+
+    # insert new user in DB
+    db = SessionLocal()
     query = insert(UsersTable).values(**user_data)
     db.execute(query)
     db.commit()
@@ -53,37 +61,47 @@ async def add_user(params: AddUserRequest) -> dict:
 @app.post("/add_audio")
 async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), token: str = Form(...)) -> dict:
     try:
+        # read wav file
         binary_audio = await file.read()
         if not binary_audio:
             return {"Error": "Failed to upload file. Please try again."}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
+    # read file name
     audio_name = file.filename.split(".")[0]
+
+    # check file format
     audio_format = file.filename.split(".")[-1]
     if audio_format != "wav":
         return {"Error": "Uploaded file must have wav format!!"}
 
-    # Создаем временный файл в памяти
+    # create temporary file in memory
     temp_file = io.BytesIO(binary_audio)
 
-    # Открываем аудиозапись из временного файла
+    # open audio from temp_file
     audio = AudioSegment.from_file(temp_file, format='wav')
 
     # Конвертируем в формат MP3
+    # convert wav to mp3
     output = io.BytesIO()
     audio.export(output, format='mp3', codec='mp3', parameters=['-q:a', '0', '-map', '0'])
-
-    # Сбрасываем указатель файла в начало
     output.seek(0)
 
     db = SessionLocal()
+    # checking for the existence of the user
     user = db.query(UsersTable).filter(UsersTable.user_uuid == user_uuid, UsersTable.token == token).first()
     if not user:
         return {"Error": "User with this token and UUID doesn't exist!!!"}
 
+    # generate audio_uuid
     audio_uuid = uuid.uuid4()
-    audio_url = f"http://{app_ip}:{app_port}/record?id={audio_uuid}&user={user_uuid}"
+
+    # create url for download audio file
+    ip = socket.gethostbyname(socket.gethostname())
+    config = Config(app=app)
+    port = config.port
+    audio_url = f"http://{ip}:{port}/record?id={audio_uuid}&user={user_uuid}"
 
     audio_data = {
         "audio_uuid": audio_uuid,
@@ -92,22 +110,25 @@ async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), to
         "audio_url": audio_url,
         "audio_name": audio_name
     }
-
+    # insert new audio in DB
     query = insert(AudioTable).values(**audio_data)
     db.execute(query)
     db.commit()
     db.close()
+
     return {"url": audio_url}
 
 
 @app.get("/record")
-async def record(audio_uuid: str = Query(description="id"), user_uuid: str = Query(description="user")) -> StreamingResponse or dict:
+async def record(id: str = Query(description="id"), user: str = Query(description="user")) -> StreamingResponse or dict:
     db = SessionLocal()
-    audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == audio_uuid, AudioTable.user_uuid == user_uuid).one()
+    # checking for the existence of the audio
+    audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == id, AudioTable.user_uuid == user).one()
     if not audio_info:
         return {"Error": "Audio with this id and user doesn't exist!!!"}
     binary_audio = audio_info.audio
 
+    # define an async audio generator function
     async def audio_generator():
         buffer = io.BytesIO(binary_audio)
         chunk = buffer.read(4096)
@@ -115,7 +136,10 @@ async def record(audio_uuid: str = Query(description="id"), user_uuid: str = Que
             yield chunk
             chunk = buffer.read(4096)
 
+    # filename processing
     file_name = urllib.parse.quote(audio_info.audio_name, safe="")
+
+    # headers processing
     headers = {
         "Content-Disposition": f'attachment; filename="{file_name}.mp3"'
     }
@@ -124,4 +148,4 @@ async def record(audio_uuid: str = Query(description="id"), user_uuid: str = Que
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=app_ip, port=app_port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
