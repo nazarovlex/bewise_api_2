@@ -4,12 +4,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import relationship
 
 
+# requests model
+class AddUserRequest(BaseModel):
+    username: str
+
+
 # postgres table
 class UsersTable(Base):
     __tablename__ = "users"
     user_uuid = Column(String, primary_key=True, autoincrement=False)
     token = Column(String, unique=True)
     username = Column(Text)
+
     audios = relationship("AudioTable", back_populates="user")
 
 
@@ -23,9 +29,3 @@ class AudioTable(Base):
     audio = Column(LargeBinary)
 
     user = relationship("UsersTable", back_populates="audios")
-
-
-# requests model
-class AddUserRequest(BaseModel):
-    username: str
-
