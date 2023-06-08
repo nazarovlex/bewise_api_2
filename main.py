@@ -1,11 +1,11 @@
 import urllib
 import uuid
 import io
-from fastapi import HTTPException, status
+import pydub
 import uvicorn
 from pydub import AudioSegment
 from fastapi import FastAPI, Query, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from models import UsersTable, AudioTable, AddUserRequest
 from database import database, engine, Base, SessionLocal
 from sqlalchemy.dialects.postgresql import insert
@@ -16,26 +16,27 @@ from uvicorn import Config
 app = FastAPI()
 
 
-# create all tables in DB
+# create tables in DB
 async def create_tables():
+    # create tables if not exist
     Base.metadata.create_all(bind=engine)
 
 
-# connect to DB when app is start running
+# create DB connection
 @app.on_event("startup")
 async def startup():
     await database.connect()
     await create_tables()
 
 
-# disconnect to DB when app is stopping
+# close DB connection
 @app.on_event("shutdown")
 async def shutdown():
     await database.disconnect()
 
 
-@app.post("/add_user")
-async def add_user(params: AddUserRequest) -> dict:
+@app.post("/add_user", status_code=200)
+async def add_user(response: Response, params: AddUserRequest) -> dict:
     username = params.username
 
     # generate token and user_uuid
@@ -50,49 +51,66 @@ async def add_user(params: AddUserRequest) -> dict:
 
     # insert new user in DB
     db = SessionLocal()
-    query = insert(UsersTable).values(**user_data)
-    db.execute(query)
+    try:
+        query = insert(UsersTable).values(**user_data)
+        db.execute(query)
+    except Exception as error:
+        db.rollback()
+        response.status_code = 500
+        return {"error": str(error)}
+
     db.commit()
     db.close()
 
     return {"user_uuid": user_uuid, "token": token}
 
 
-@app.post("/add_audio")
-async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), token: str = Form(...)) -> dict:
+@app.post("/add_audio", status_code=201)
+async def add_audio(response: Response, file: UploadFile = File(...), user_uuid: str = Form(...), token: str = Form(...)) -> dict:
+    db = SessionLocal()
+    # checking for the existence of the user
+    try:
+        user = db.query(UsersTable).filter(UsersTable.user_uuid == user_uuid, UsersTable.token == token).first()
+    except Exception as error:
+        response.status_code = 500
+        return {"error": f"get user error - {error}"}
+    if not user:
+        response.status_code = 400
+        return {"error": "user with this token and uuid doesn't exist"}
+
     try:
         # read wav file
         binary_audio = await file.read()
         if not binary_audio:
-            return {"Error": "Failed to upload file. Please try again."}
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+            response.status_code = 400
+            return {"error": "failed to upload file"}
+    except Exception as error:
+        response.status_code = 500
+        return {"error": str(error)}
 
     # read file name
-    audio_name = file.filename.split(".")[0]
+    audio_name = "".join(file.filename.split(".")[:-1])
 
     # check file format
     audio_format = file.filename.split(".")[-1]
     if audio_format != "wav":
-        return {"Error": "Uploaded file must have wav format!!"}
+        response.status_code = 400
+        return {"error": "uploaded file must have wav format"}
 
     # create temporary file in memory
     temp_file = io.BytesIO(binary_audio)
 
     # open audio from temp_file
-    audio = AudioSegment.from_file(temp_file, format='wav')
+    try:
+        audio = AudioSegment.from_file(temp_file, format='wav')
+    except pydub.exceptions.CouldntDecodeError as error:
+        response.status_code = 500
+        return {"error": f"couldn't decode error - {error}"}
 
-    # Конвертируем в формат MP3
     # convert wav to mp3
     output = io.BytesIO()
     audio.export(output, format='mp3', codec='mp3', parameters=['-q:a', '0', '-map', '0'])
     output.seek(0)
-
-    db = SessionLocal()
-    # checking for the existence of the user
-    user = db.query(UsersTable).filter(UsersTable.user_uuid == user_uuid, UsersTable.token == token).first()
-    if not user:
-        return {"Error": "User with this token and UUID doesn't exist!!!"}
 
     # generate audio_uuid
     audio_uuid = uuid.uuid4()
@@ -111,24 +129,34 @@ async def add_audio(file: UploadFile = File(...), user_uuid: str = Form(...), to
         "audio_name": audio_name
     }
     # insert new audio in DB
-    query = insert(AudioTable).values(**audio_data)
-    db.execute(query)
+    try:
+        query = insert(AudioTable).values(**audio_data)
+        db.execute(query)
+    except Exception as error:
+        response.status_code = 500
+        return {"error": f"insert new audio error - {error}"}
     db.commit()
     db.close()
 
     return {"url": audio_url}
 
 
-@app.get("/record")
-async def record(id: str = Query(description="id"), user: str = Query(description="user")) -> StreamingResponse or dict:
+@app.get("/record", status_code=200)
+async def record(response: Response, id: str = Query(description="id"),
+                 user: str = Query(description="user")) -> StreamingResponse or dict:
     db = SessionLocal()
     # checking for the existence of the audio
-    audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == id, AudioTable.user_uuid == user).one()
+    try:
+        audio_info = db.query(AudioTable).filter(AudioTable.audio_uuid == id, AudioTable.user_uuid == user).first()
+    except Exception as error:
+        response.status_code = 500
+        return {"error": f"find audio error - {error}"}
     if not audio_info:
-        return {"Error": "Audio with this id and user doesn't exist!!!"}
+        response.status_code = 400
+        return {"error": "audio with this id and user doesn't exist"}
     binary_audio = audio_info.audio
 
-    # define an async audio generator function
+    # audio generator function
     async def audio_generator():
         buffer = io.BytesIO(binary_audio)
         chunk = buffer.read(4096)
@@ -136,10 +164,9 @@ async def record(id: str = Query(description="id"), user: str = Query(descriptio
             yield chunk
             chunk = buffer.read(4096)
 
-    # filename processing
+    # process file name
     file_name = urllib.parse.quote(audio_info.audio_name, safe="")
 
-    # headers processing
     headers = {
         "Content-Disposition": f'attachment; filename="{file_name}.mp3"'
     }
