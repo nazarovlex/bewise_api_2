@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Text, String, ForeignKey, LargeBinary
-from storage import Base
+from storage.storage import Base
 from pydantic import BaseModel
 from sqlalchemy.orm import relationship
 
