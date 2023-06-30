@@ -19,7 +19,7 @@ To remove database artifacts and unused docker data, execute command:
 To restart project (build, start) execute command:
 - make restart
     
-API request examples in folder "API_request_examples".
+API request examples in "Bewise_API_2.postman_collection" in root folder.
 
 For more info about API run app and open link "http://localhost:8000/docs" or "http://localhost:8000/redoc".
 
