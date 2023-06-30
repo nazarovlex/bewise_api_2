@@ -1,0 +1,149 @@
+{
+	"info": {
+		"_postman_id": "4dbd551b-0294-44b2-a73a-1b3729296cda",
+		"name": "Bewise_API_2",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "27515893"
+	},
+	"item": [
+		{
+			"name": "add_user",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"Aleksey\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/add_user",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"add_user"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "add_audio",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "multipart/form-data",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/home/nazarov/Downloads/Cool_track.wav"
+						},
+						{
+							"key": "user_uuid",
+							"value": "2db13649-a020-4f9b-ab80-1b1fe7ae0435",
+							"type": "text"
+						},
+						{
+							"key": "token",
+							"value": "51531fe5-bc61-4a92-a1d4-6686daf317b5",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{URL}}/add_audio",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"add_audio"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "record",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"ip\": \"qwe\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{URL}}/record?id=366d74ab-3709-427b-9a67-f45ee970a5c4&user=2db13649-a020-4f9b-ab80-1b1fe7ae0435",
+					"host": [
+						"{{URL}}"
+					],
+					"path": [
+						"record"
+					],
+					"query": [
+						{
+							"key": "id",
+							"value": "366d74ab-3709-427b-9a67-f45ee970a5c4"
+						},
+						{
+							"key": "user",
+							"value": "2db13649-a020-4f9b-ab80-1b1fe7ae0435"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "URL",
+			"value": "URL",
+			"type": "string"
+		}
+	]
+}
