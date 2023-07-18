@@ -13,7 +13,7 @@ stop:
 
 .PHONY: clean
 clean:
-	rm -rf .artifacts
+	sudo rm -rf .artifacts
 
 .PHONY: prune
 prune:
