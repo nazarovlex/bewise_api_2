@@ -6,8 +6,8 @@ import uvicorn
 from pydub import AudioSegment
 from fastapi import FastAPI, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, Response
-from models import UsersTable, AudioTable, AddUserRequest
-from storage import database, engine, Base, SessionLocal
+from storage.models import UsersTable, AudioTable, AddUserRequest
+from storage.storage import database, engine, Base, SessionLocal
 from sqlalchemy.dialects.postgresql import insert
 import socket
 from uvicorn import Config
