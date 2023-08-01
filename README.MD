@@ -1,9 +1,9 @@
 # bewise_api_2
 
-###Installation Requirements
+### Installation Requirements
  - Docker      
 
-###Getting Started
+### Getting Started
 To build and run the project, follow these steps:   
 
 - Build the project: make build   
